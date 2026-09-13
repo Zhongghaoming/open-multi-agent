@@ -169,6 +169,15 @@ function insufficientSamplesFailure(
   }
 }
 
+function regressionSampleCountWarning(
+  side: 'current' | 'baseline',
+  threshold: GateThreshold,
+  sampleCount: number,
+  minSamples: number,
+): string {
+  return `Regression check for gate metric "${threshold.metric}" for ${thresholdTarget(threshold)} was skipped because the ${side} aggregate has ${sampleCount} samples, below minimum ${minSamples}.`
+}
+
 function thresholdFailures(
   report: EvalRunReport,
   threshold: GateThreshold,
@@ -308,8 +317,38 @@ export function evaluateGate(
         continue
       }
 
-      const currentValue = aggregateMetric(aggregateFor(report, threshold), threshold.metric)
-      const baselineValue = aggregateMetric(aggregateFor(baseline, threshold), threshold.metric)
+      const currentAggregate = aggregateFor(report, threshold)
+      const baselineAggregate = aggregateFor(baseline, threshold)
+      if (threshold.minSamples !== undefined) {
+        const currentSampleCount = currentAggregate === undefined
+          ? undefined
+          : sampleCountFor(currentAggregate, threshold)
+        if (currentSampleCount !== undefined && currentSampleCount < threshold.minSamples) {
+          warnings.add(regressionSampleCountWarning(
+            'current',
+            threshold,
+            currentSampleCount,
+            threshold.minSamples,
+          ))
+          continue
+        }
+
+        const baselineSampleCount = baselineAggregate === undefined
+          ? undefined
+          : sampleCountFor(baselineAggregate, threshold)
+        if (baselineSampleCount !== undefined && baselineSampleCount < threshold.minSamples) {
+          warnings.add(regressionSampleCountWarning(
+            'baseline',
+            threshold,
+            baselineSampleCount,
+            threshold.minSamples,
+          ))
+          continue
+        }
+      }
+
+      const currentValue = aggregateMetric(currentAggregate, threshold.metric)
+      const baselineValue = aggregateMetric(baselineAggregate, threshold.metric)
       if (currentValue === undefined || baselineValue === undefined) {
         warnings.add(
           `Baseline metric "${threshold.metric}" for ${thresholdTarget(threshold)} is unavailable; regression check was skipped.`,
